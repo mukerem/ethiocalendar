@@ -43,9 +43,6 @@ def ethiodelay(year):
     day = ethiodaydelay(year)
     return day * 24 * 60 * 60
 
-def fromgretoethio(gregoriandate):
-    return date.fromordinal(gregoriandate.toordinal() - ETHIOORIGINALDAYDELAY)
-
 def is_puagume6(year):
     "year -> 1 if pagueme 6 in the given year, else 0."
     return year % 4 == 3
@@ -2137,6 +2134,18 @@ def _isoweek1monday(year):
     if firstweekday > THURSDAY:
         week1monday += 7
     return week1monday
+
+
+def fromgretoethio(gregoriandate):
+    if isinstance(gregoriandate, _gregoriancalendar.datetime):
+        convertdate = date.fromordinal(gregoriandate.date().toordinal() - ETHIOORIGINALDAYDELAY)
+        _time = gregoriandate.time()
+        originaltime = time(_time.hour, _time.minute, _time.second, _time.microsecond, _time.tzinfo)
+        return datetime.combine(convertdate, originaltime)
+    elif isinstance(gregoriandate, _gregoriancalendar.date):
+        return date.fromordinal(gregoriandate.toordinal() - ETHIOORIGINALDAYDELAY)
+    else:
+        raise TypeError('the argument must be date or datetime object of datetime module')
 
 
 class timezone(tzinfo):
