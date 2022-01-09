@@ -1553,6 +1553,14 @@ class datetime(date):
         self._fold = fold
         return self
 
+    
+    def togregorian(self):
+        convertdate = _gregoriancalendar.date.fromordinal(self.date().toordinal() + ETHIOORIGINALDAYDELAY)
+        _time = self.time()
+        originaltime = _gregoriancalendar.time(_time.hour, _time.minute, _time.second, _time.microsecond, _time.tzinfo)
+
+        return _gregoriancalendar.combine(date.fromordinal(convertdate, originaltime))
+
     # Read-only field accessors
     @property
     def hour(self):
