@@ -7,7 +7,6 @@ time zone and DST data sources.
 import datetime as _gregoriancalendar
 import time as _time
 import math as _math
-import sys
 
 def _cmp(x, y):
     return 0 if x == y else 1 if x > y else -1
@@ -30,18 +29,6 @@ for dim in _DAYS_IN_MONTH[1:]:
     _DAYS_BEFORE_MONTH.append(dbm)
     dbm += dim
 del dbm, dim
-
-
-# number of days Ethiopian calendar delay from the Gregorian calendar in 2020
-def ethiodaydelay(year): 
-    day = year // 400 * 3 + year//100 % 4     # leap year shift 3 days in 400 year, b/c 100, 200, 300, 500, ...are not leap year but
-    # in ethiopian calendar is it leap year after that year
-    return ETHIOORIGINALDAYDELAY + day
-
-# number of seconds Ethiopian calendar delay from the Gregorian calendar
-def ethiodelay(year):
-    day = ethiodaydelay(year)
-    return day * 24 * 60 * 60
 
 def is_puagume6(year):
     "year -> 1 if pagueme 6 in the given year, else 0."
@@ -746,7 +733,6 @@ class date:
     Constructors:
 
     __new__()
-    fromtimestamp()
     today()
     fromordinal()
 
@@ -803,20 +789,13 @@ class date:
         return self
 
     # Additional constructors
-    
-    @classmethod
-    def fromtimestamp(cls, t):
-        "Construct a date from a POSIX timestamp (like time.time())."
-        y, m, d, hh, mm, ss, weekday, jday, dst = _time.localtime(t)
-        return cls(y, m, d)
 
     @classmethod
     def today(cls):
         "Construct a date from time.time()."
         t = _time.time()
-        delay = ethiodelay(_gregoriancalendar.date.fromtimestamp(t).year)
-        t -= delay
-        return cls.fromtimestamp(t)
+        _today = _gregoriancalendar.date.fromtimestamp(t)
+        return fromgretoethio(_today)
 
     @classmethod
     def fromordinal(cls, n):
@@ -1592,79 +1571,18 @@ class datetime(date):
         return self._fold
 
     @classmethod
-    def _fromtimestamp(cls, t, utc, tz):
-        """Construct a datetime from a POSIX timestamp (like time.time()).
-
-        A timezone info object may be passed in as well.
-        """
-        frac, t = _math.modf(t)
-        us = round(frac * 1e6)
-        if us >= 1000000:
-            t += 1
-            us -= 1000000
-        elif us < 0:
-            t -= 1
-            us += 1000000
-
-        converter = _time.gmtime if utc else _time.localtime
-        y, m, d, hh, mm, ss, weekday, jday, dst = converter(t)
-        ss = min(ss, 59)    # clamp out leap seconds if the platform has them
-        result = cls(y, m, d, hh, mm, ss, us, tz)
-        if tz is None:
-            # As of version 2015f max fold in IANA database is
-            # 23 hours at 1969-09-30 13:00:00 in Kwajalein.
-            # Let's probe 24 hours in the past to detect a transition:
-            max_fold_seconds = 24 * 3600
-
-            # On Windows localtime_s throws an OSError for negative values,
-            # thus we can't perform fold detection for values of time less
-            # than the max time fold. See comments in module's
-            # version of this method for more details.
-            if t < max_fold_seconds and sys.platform.startswith("win"):
-                return result
-
-            y, m, d, hh, mm, ss = converter(t - max_fold_seconds)[:6]
-            probe1 = cls(y, m, d, hh, mm, ss, us, tz)
-            trans = result - probe1 - timedelta(0, max_fold_seconds)
-            if trans.days < 0:
-                y, m, d, hh, mm, ss = converter(t + trans // timedelta(0, 1))[:6]
-                probe2 = cls(y, m, d, hh, mm, ss, us, tz)
-                if probe2 == result:
-                    result._fold = 1
-        else:
-            result = tz.fromutc(result)
-        return result
-
-    @classmethod
-    def fromtimestamp(cls, t, tz=None):
-        """Construct a datetime from a POSIX timestamp (like time.time()).
-
-        A timezone info object may be passed in as well.
-        """
-        _check_tzinfo_arg(tz)
-
-        return cls._fromtimestamp(t, tz is not None, tz)
-
-    @classmethod
-    def utcfromtimestamp(cls, t):
-        """Construct a naive UTC datetime from a POSIX timestamp."""
-        return cls._fromtimestamp(t, True, None)
-
-    @classmethod
     def now(cls, tz=None):
         "Construct a datetime from time.time() and optional time zone info."
         t = _time.time()
-        delay = ethiodelay(_gregoriancalendar.date.fromtimestamp(t).year)
-        t -= delay
-        return cls.fromtimestamp(t, tz)
+        _now = _gregoriancalendar.datetime.fromtimestamp(t)
+        return fromgretoethio(_now)
 
     @classmethod
     def utcnow(cls):
         "Construct a UTC datetime from time.time()."
         t = _time.time()
-        delay = ethiodelay(_gregoriancalendar.date.fromtimestamp(t).year)
-        t -= delay
-        return cls.utcfromtimestamp(t)
+        _now = _gregoriancalendar.datetime.utcfromtimestamp(t)
+        return fromgretoethio(_now)
 
     @classmethod
     def combine(cls, date, time, tzinfo=True):
@@ -1750,15 +1668,6 @@ class datetime(date):
         # We have found both offsets a and b, but neither t - a nor t - b is
         # a solution.  This means t is in the gap.
         return (max, min)[self.fold](u1, u2)
-
-
-    def timestamp(self):
-        "Return POSIX timestamp as float"
-        if self._tzinfo is None:
-            s = self._mktime()
-            return s + self.microsecond / 1e6
-        else:
-            return (self - _EPOCH).total_seconds()
 
     def utctimetuple(self):
         "Return UTC time tuple compatible with time.gmtime()."
