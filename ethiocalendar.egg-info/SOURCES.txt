@@ -1,0 +1,10 @@
+LICENSE.txt
+README.md
+setup.cfg
+setup.py
+ethiocalendar/__init__.py
+ethiocalendar/ethiocalendar.py
+ethiocalendar.egg-info/PKG-INFO
+ethiocalendar.egg-info/SOURCES.txt
+ethiocalendar.egg-info/dependency_links.txt
+ethiocalendar.egg-info/top_level.txt
