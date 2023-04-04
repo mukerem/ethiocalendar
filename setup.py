@@ -8,7 +8,7 @@ setup(
   author = 'Mukerem Ali',                   # Type in your name
   author_email = 'mukeremali112@gmail.com',      # Type in your E-Mail
   url = 'https://github.com/mukerem/ethiocalendar',   # Provide either the link to your github or to your website
-  download_url = 'https://github.com/mukerem/ethiocalendar/archive/refs/tags/v1.1.tar.gz',    # I explain this later on
+  download_url = 'https://github.com/mukerem/ethiocalendar/archive/refs/tags/v1.0.2.tar.gz',    # I explain this later on
   install_requires=[],
   classifiers=[
     'Development Status :: 3 - Alpha',      # Chose either "3 - Alpha", "4 - Beta" or "5 - Production/Stable" as the current state of your package
