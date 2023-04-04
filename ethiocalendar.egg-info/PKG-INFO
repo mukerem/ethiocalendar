@@ -3,7 +3,7 @@ Name: ethiocalendar
 Version: 1.0.2
 Summary: Ethiopian Calendar based date and time module
 Home-page: https://github.com/mukerem/ethiocalendar
-Download-URL: https://github.com/mukerem/ethiocalendar/archive/refs/tags/v1.1.tar.gz
+Download-URL: https://github.com/mukerem/ethiocalendar/archive/refs/tags/v1.0.2.tar.gz
 Author: Mukerem Ali
 Author-email: mukeremali112@gmail.com
 License: MIT
