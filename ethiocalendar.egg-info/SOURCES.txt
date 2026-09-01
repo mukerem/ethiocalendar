@@ -8,3 +8,4 @@ ethiocalendar.egg-info/PKG-INFO
 ethiocalendar.egg-info/SOURCES.txt
 ethiocalendar.egg-info/dependency_links.txt
 ethiocalendar.egg-info/top_level.txt
+tests/test_ethiocalendar.py

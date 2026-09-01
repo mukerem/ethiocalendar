@@ -13,7 +13,12 @@ def _cmp(x, y):
 
 MINYEAR = 1
 MAXYEAR = 9999
-_MAXORDINAL = 3652059  # date.max.toordinal()
+_MAXORDINAL = 3652059  # replaced with date.max.toordinal() after date is defined
+# Ethiopic Amete Mihret epoch offset in Julian Day Numbers.
+# Used by Unicode ICU EthiopicCalendar and Beyene-Kudlek conversion formulas.
+# JDN 1723856 is 1 Meskerem of year 0; this library's day 1 is 1 Meskerem of year 1
+# (JDN 1724221), which is 2795 days after proleptic Gregorian 0001-01-01.
+ETHIOPIAN_EPOCH_JDN = 1723856
 ETHIOORIGINALDAYDELAY = 2795 # number of days Ethiopian calendar delay from the Gregorian calendar in 01-01-0001
 WEEKDAYADVANCE = 2 # 01-01-0001 start on Wednesday, so 2 days are advance 
 # Utility functions, adapted from Python's Demo/classes/Dates.py, which
@@ -21,7 +26,7 @@ WEEKDAYADVANCE = 2 # 01-01-0001 start on Wednesday, so 2 days are advance
 # both directions. 
 
 # -1 is a placeholder for indexing purposes.
-_DAYS_IN_MONTH = [-1] + [30 for i in range(12)]
+_DAYS_IN_MONTH = [-1] + [30 for i in range(12)] + [5]
 
 _DAYS_BEFORE_MONTH = [-1]  # -1 is a placeholder for indexing purposes.
 dbm = 0
@@ -63,22 +68,24 @@ def _ymd2ord(year, month, day):
 
 def _ord2ymd(n):
     "ordinal -> (year, month, day), considering 01-01-0001 as day 1."
-
-    year = _math.floor(n // 365.25)
-    n -= _math.floor(year * 365.25)
-    year += 1
-    month = _math.ceil(n / 30.0)
-    n -= (month - 1) * 30
-    day = n
-    if year % 4 == 0:
-        day -= 1
-        if day == 0:
-            month -= 1
-            if month == 0:
-                month = 13
-                year -= 1
-            day = _days_in_month(year, month)
-    return year, month, day
+    # Inverse of _ymd2ord using 1461-day (4-year) cycles. Leap day is Pagume 6
+    # of years with year % 4 == 3, i.e. the 3rd year of each cycle.
+    n0 = n - 1
+    cycles, rem = divmod(n0, 1461)
+    year = 4 * cycles + 1
+    if rem < 365:
+        pass
+    elif rem < 730:
+        year += 1
+        rem -= 365
+    elif rem < 1096:
+        year += 2
+        rem -= 730
+    else:
+        year += 3
+        rem -= 1096
+    month, day = divmod(rem, 30)
+    return year, month + 1, day + 1
 
 # Month and day names.  For localized versions, see the calendar module.
 _MONTHNAMES = [None, "Meskerem", "Tikimit", "Hidar", "Tahsas", "Tir", "Yekatit",
@@ -184,6 +191,21 @@ def _wrap_strftime(object, format, timetuple):
                                 # strftime is going to have at this: escape %
                                 Zreplace = s.replace('%', '%%')
                     newformat.append(Zreplace)
+                elif ch == 'Y':
+                    newformat.append('%04d' % object.year)
+                elif ch == 'y':
+                    newformat.append('%02d' % (object.year % 100))
+                elif ch == 'm':
+                    newformat.append('%02d' % object.month)
+                elif ch == 'd':
+                    newformat.append('%02d' % object.day)
+                elif ch == 'B':
+                    newformat.append(_MONTHNAMES[object.month])
+                elif ch == 'b':
+                    newformat.append(_MONTHNAMES[object.month][:3])
+                elif ch == 'x':
+                    newformat.append('%04d-%02d-%02d' % (
+                        object.year, object.month, object.day))
                 else:
                     push('%')
                     push(ch)
@@ -192,6 +214,14 @@ def _wrap_strftime(object, format, timetuple):
         else:
             push(ch)
     newformat = "".join(newformat)
+    # libc strftime only accepts months 1..12; Pagume (13) is already
+    # substituted above for date directives.
+    if getattr(timetuple, 'tm_mon', 1) > 12:
+        timetuple = _time.struct_time((
+            timetuple.tm_year, 12, timetuple.tm_mday,
+            timetuple.tm_hour, timetuple.tm_min, timetuple.tm_sec,
+            timetuple.tm_wday, timetuple.tm_yday, timetuple.tm_isdst,
+        ))
     return _time.strftime(newformat, timetuple)
 
 # Helpers for parsing the result of isoformat()
@@ -1069,6 +1099,7 @@ _date_class = date  # so functions w/ args named "date" can get at the class
 date.min = date(1, 1, 1)
 date.max = date(9999, 13, 6)
 date.resolution = timedelta(days=1)
+_MAXORDINAL = date.max.toordinal()
 
 
 class tzinfo:
@@ -1500,7 +1531,7 @@ class datetime(date):
     def __new__(cls, year, month=None, day=None, hour=0, minute=0, second=0,
                 microsecond=0, tzinfo=None, *, fold=0):
         if (isinstance(year, (bytes, str)) and len(year) == 10 and
-            1 <= ord(year[2:3])&0x7F <= 12):
+            1 <= ord(year[2:3])&0x7F <= 13):
             # Pickle support
             if isinstance(year, str):
                 try:
@@ -1534,11 +1565,17 @@ class datetime(date):
 
     
     def togregorian(self):
-        convertdate = _gregoriancalendar.date.fromordinal(self.date().toordinal() + ETHIOORIGINALDAYDELAY)
-        _time = self.time()
-        originaltime = _gregoriancalendar.time(_time.hour, _time.minute, _time.second, _time.microsecond, _time.tzinfo)
+        """Return the equivalent proleptic Gregorian datetime.
 
-        return _gregoriancalendar.combine(date.fromordinal(convertdate, originaltime))
+        The clock time, tzinfo, and fold are preserved; only the calendar
+        date is converted.
+        """
+        gdate = _gregoriancalendar.date.fromordinal(
+            self.date().toordinal() + ETHIOORIGINALDAYDELAY)
+        t = self.time()
+        gtime = _gregoriancalendar.time(
+            t.hour, t.minute, t.second, t.microsecond, t.tzinfo, fold=t.fold)
+        return _gregoriancalendar.datetime.combine(gdate, gtime)
 
     # Read-only field accessors
     @property
@@ -1637,37 +1674,20 @@ class datetime(date):
 
     def _mktime(self):
         """Return integer POSIX timestamp."""
-        epoch = datetime(1970, 1, 1)
-        max_fold_seconds = 24 * 3600
-        t = (self - epoch) // timedelta(0, 1)
-        def local(u):
-            y, m, d, hh, mm, ss = _time.localtime(u)[:6]
-            return (datetime(y, m, d, hh, mm, ss) - epoch) // timedelta(0, 1)
+        # Convert to Gregorian civil time first so libc localtime/mktime
+        # sees the same calendar the operating system uses.
+        return int(self.togregorian().replace(tzinfo=None).timestamp())
 
-        # Our goal is to solve t = local(u) for u.
-        a = local(t) - t
-        u1 = t - a
-        t1 = local(u1)
-        if t1 == t:
-            # We found one solution, but it may not be the one we need.
-            # Look for an earlier solution (if `fold` is 0), or a
-            # later one (if `fold` is 1).
-            u2 = u1 + (-max_fold_seconds, max_fold_seconds)[self.fold]
-            b = local(u2) - u2
-            if a == b:
-                return u1
+    def timestamp(self):
+        """Return POSIX timestamp as float.
+
+        Naive datetimes are interpreted in the local timezone, matching
+        datetime.datetime.timestamp().
+        """
+        if self._tzinfo is None:
+            return self._mktime() + self.microsecond / 1e6
         else:
-            b = t1 - u1
-            assert a != b
-        u2 = t - b
-        t2 = local(u2)
-        if t2 == t:
-            return u2
-        if t1 == t:
-            return u1
-        # We have found both offsets a and b, but neither t - a nor t - b is
-        # a solution.  This means t is in the gap.
-        return (max, min)[self.fold](u1, u2)
+            return (self - _EPOCH).total_seconds()
 
     def utctimetuple(self):
         "Return UTC time tuple compatible with time.gmtime()."
@@ -1722,7 +1742,7 @@ class datetime(date):
         else:
             ts = (self - _EPOCH) // timedelta(seconds=1)
         localtm = _time.localtime(ts)
-        local = datetime(*localtm[:6])
+        local = fromgretoethio(_gregoriancalendar.datetime(*localtm[:6]))
         # Extract TZ data
         gmtoff = localtm.tm_gmtoff
         zone = localtm.tm_zone
@@ -2065,6 +2085,41 @@ def fromgretoethio(gregoriandate):
         raise TypeError('the argument must be date or datetime object of datetime module')
 
 
+def to_gregorian(year, month, day):
+    """Convert an Ethiopian date to a Gregorian (year, month, day) tuple.
+
+    Existing object API: ``date(year, month, day).togregorian()``.
+    """
+    g = date(year, month, day).togregorian()
+    return (g.year, g.month, g.day)
+
+
+def from_gregorian(year, month, day):
+    """Convert a Gregorian date to an Ethiopian (year, month, day) tuple.
+
+    Existing object API: ``fromgretoethio(datetime.date(year, month, day))``.
+    """
+    e = fromgretoethio(_gregoriancalendar.date(year, month, day))
+    return (e.year, e.month, e.day)
+
+
+def today():
+    """Return today's Ethiopian date as a (year, month, day) tuple.
+
+    Existing object API: ``date.today()``.
+    """
+    t = date.today()
+    return (t.year, t.month, t.day)
+
+
+def is_leap_year(year):
+    """Return True if the Ethiopian year has Pagume 6 (year % 4 == 3).
+
+    Existing alias: ``is_puagume6(year)``.
+    """
+    return bool(is_puagume6(year))
+
+
 class timezone(tzinfo):
     __slots__ = '_offset', '_name'
 
@@ -2187,7 +2242,12 @@ timezone.utc = timezone._create(timedelta(0))
 # values. This may change in the future.
 timezone.min = timezone._create(-timedelta(hours=23, minutes=59))
 timezone.max = timezone._create(timedelta(hours=23, minutes=59))
-_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+# Unix epoch is Gregorian 1970-01-01 00:00:00 UTC, expressed as an Ethiopian datetime.
+_g_unix_epoch = _gregoriancalendar.date(1970, 1, 1)
+_e_unix_epoch = date.fromordinal(_g_unix_epoch.toordinal() - ETHIOORIGINALDAYDELAY)
+_EPOCH = datetime(_e_unix_epoch.year, _e_unix_epoch.month, _e_unix_epoch.day,
+                  tzinfo=timezone.utc)
+del _g_unix_epoch, _e_unix_epoch
 
 # Some time zone algebra.  For a datetime x, let
 #     x.n = x stripped of its timezone -- its naive time.
